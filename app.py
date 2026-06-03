@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import joblib
 import os
-from PIL import Image # We need this new library to load the image!
+from PIL import Image 
 
 # 1. Configure the Web Page
 st.set_page_config(
@@ -11,9 +11,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize Session State Memory
+# --- Initialize Deep Memory (The Fix!) ---
 if 'X_ready' not in st.session_state:
     st.session_state['X_ready'] = None
+if 'raw_data' not in st.session_state:
+    st.session_state['raw_data'] = None
 
 # 2. Build the Header
 st.title("🧠 Alzheimer's Disease Diagnostic AI")
@@ -45,16 +47,18 @@ except Exception as e:
 # ---------------------------------------------------------
 st.sidebar.header("🔬 Patient Data Input")
 input_method = st.sidebar.radio("Choose Input Method:", ["📁 File Upload", "✍️ Manual Entry"])
-patient_data = None
 
 if input_method == "📁 File Upload":
     uploaded_file = st.sidebar.file_uploader("Upload Microbiome Data (.tsv / .csv)", type=["csv", "tsv"])
     if uploaded_file is not None:
         if uploaded_file.name.endswith('.csv'):
-            patient_data = pd.read_csv(uploaded_file, index_col=0)
+            st.session_state['raw_data'] = pd.read_csv(uploaded_file, index_col=0)
         else:
-            patient_data = pd.read_csv(uploaded_file, sep='\t', index_col=0)
+            st.session_state['raw_data'] = pd.read_csv(uploaded_file, sep='\t', index_col=0)
         st.sidebar.success("✅ File uploaded successfully!")
+    else:
+        st.session_state['raw_data'] = None
+        st.session_state['X_ready'] = None
 
 else:
     st.sidebar.subheader("Enter Biomarker Abundance")
@@ -67,12 +71,13 @@ else:
             manual_inputs[long_name] = val
             
         if st.form_submit_button("Save Patient Profile"):
-            patient_data = pd.DataFrame([manual_inputs], index=['Manual_Patient_1'])
-            st.sidebar.success("✅ Manual profile saved!")
+            # Save the manual data securely into deep memory
+            st.session_state['raw_data'] = pd.DataFrame([manual_inputs], index=['Manual_Patient_1'])
             st.session_state['X_ready'] = None 
+            st.sidebar.success("✅ Manual profile saved!")
 
-if patient_data is None:
-     st.session_state['X_ready'] = None
+# Pull the data out of deep memory to use in the app
+patient_data = st.session_state['raw_data']
 
 # ---------------------------------------------------------
 # STEP 5: PREPROCESSING PIPELINE INTEGRATION
@@ -106,7 +111,6 @@ if st.session_state['X_ready'] is not None:
     if st.button("🚀 Run Clinical Diagnostics", type="primary", use_container_width=True):
         with st.spinner("Analyzing microbiome signatures..."):
             
-            # --- STEP 6: AI PREDICTION ---
             X_predict = st.session_state['X_ready']
             predictions = model.predict(X_predict)
             probabilities = model.predict_proba(X_predict)
@@ -134,7 +138,6 @@ if st.session_state['X_ready'] is not None:
                     st.metric(label="AI Confidence Score", value=f"{confidence:.2f}%")
                     st.progress(int(confidence) / 100)
 
-            # --- STEP 7: BIOLOGICAL INTERPRETATION ---
             st.markdown("---")
             st.subheader("🧬 Biological Interpretation")
             
@@ -157,18 +160,14 @@ if st.session_state['X_ready'] is not None:
 # ---------------------------------------------------------
 st.markdown("---")
 st.subheader("💡 Explainable AI (XAI) Model Transparency")
-st.info("Understand how the XGBoost algorithm evaluates biomarker abundance to reach a clinical diagnosis.")
 
 with st.expander("📊 View AI Decision Matrix (SHAP Analysis)"):
     try:
-        # Load the clean SHAP plot from the figures folder
         shap_image_path = os.path.join('figures', 'shap_summary_beeswarm_clean.png')
         img = Image.open(shap_image_path)
         
-        # Display the image on the web app
         st.image(img, caption="SHAP Summary: Global Feature Importance", use_container_width=True)
         
-        # Add a quick clinical guide on how to read the chart
         st.markdown("""
         **Clinical Interpretation Guide:**
         * 🔴 **Red dots:** Represent a **high abundance** of that specific bacteria in a patient.
